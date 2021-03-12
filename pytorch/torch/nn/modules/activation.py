@@ -864,22 +864,29 @@ class MultiheadAttention(Module):
 
     def __init__(self, embed_dim, num_heads, dropout=0., bias=True, add_bias_kv=False, add_zero_attn=False, kdim=None, vdim=None):
         super(MultiheadAttention, self).__init__()
+        # TODO
+        # 这里的 embed_dim 指的是输入的特征维度，但是 self-attention 的输出维度也必须是这个
         self.embed_dim = embed_dim
         self.kdim = kdim if kdim is not None else embed_dim
         self.vdim = vdim if vdim is not None else embed_dim
+        # 表示Q,K,V三个向量的长度是否相同
         self._qkv_same_embed_dim = self.kdim == embed_dim and self.vdim == embed_dim
 
         self.num_heads = num_heads
         self.dropout = dropout
+        # 参数中的 embed_dim 是多个head的总 dim
         self.head_dim = embed_dim // num_heads
         assert self.head_dim * num_heads == self.embed_dim, "embed_dim must be divisible by num_heads"
 
+        # 下面初始化 Q,K,V 三个向量对应的权重矩阵
         if self._qkv_same_embed_dim is False:
+            # 如果自己指定了 K, V 的维度，对应的权重矩阵分别初始化
             self.q_proj_weight = Parameter(torch.Tensor(embed_dim, embed_dim))
             self.k_proj_weight = Parameter(torch.Tensor(embed_dim, self.kdim))
             self.v_proj_weight = Parameter(torch.Tensor(embed_dim, self.vdim))
             self.register_parameter('in_proj_weight', None)
         else:
+            # 否则Q,K,V对应的三个矩阵维度都是一样的，合并在一起初始化就行，所以行是 3*embed_dim
             self.in_proj_weight = Parameter(torch.empty(3 * embed_dim, embed_dim))
             self.register_parameter('q_proj_weight', None)
             self.register_parameter('k_proj_weight', None)
@@ -967,6 +974,7 @@ class MultiheadAttention(Module):
           L is the target sequence length, S is the source sequence length.
         """
         if not self._qkv_same_embed_dim:
+            # Q,K,V 三个向量长度不同时的处理
             return F.multi_head_attention_forward(
                 query, key, value, self.embed_dim, self.num_heads,
                 self.in_proj_weight, self.in_proj_bias,
@@ -974,10 +982,11 @@ class MultiheadAttention(Module):
                 self.dropout, self.out_proj.weight, self.out_proj.bias,
                 training=self.training,
                 key_padding_mask=key_padding_mask, need_weights=need_weights,
-                attn_mask=attn_mask, use_separate_proj_weight=True,
+                attn_mask=attn_mask, use_separate_proj_weight=True,  # 这里开始指定了 不同的 Q,K,V 权重矩阵
                 q_proj_weight=self.q_proj_weight, k_proj_weight=self.k_proj_weight,
                 v_proj_weight=self.v_proj_weight)
         else:
+            # Q,K,V三个向量长度相同的处理
             return F.multi_head_attention_forward(
                 query, key, value, self.embed_dim, self.num_heads,
                 self.in_proj_weight, self.in_proj_bias,

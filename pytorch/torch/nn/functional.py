@@ -4643,6 +4643,7 @@ def multi_head_attention_forward(
     key_padding_mask: Optional[Tensor] = None,
     need_weights: bool = True,
     attn_mask: Optional[Tensor] = None,
+    # 下面的参数时用于 Q,K,V 维度不同时，使用不同的权重矩阵
     use_separate_proj_weight: bool = False,
     q_proj_weight: Optional[Tensor] = None,
     k_proj_weight: Optional[Tensor] = None,
@@ -4735,33 +4736,46 @@ def multi_head_attention_forward(
             static_k=static_k,
             static_v=static_v,
         )
+
+    # tgt_len 是序列长度， bsz 是 batch size， embed_dim 是 特征维度
     tgt_len, bsz, embed_dim = query.size()
+    # 这里做的断言检查，要求传入的query里的 embed_dim 等于 模型的输出维度
     assert embed_dim == embed_dim_to_check
     # allow MHA to have different sizes for the feature dimension
     assert key.size(0) == value.size(0) and key.size(1) == value.size(1)
 
+    # head_dim 是每个 head 的dim
     if isinstance(embed_dim, torch.Tensor):
         # embed_dim can be a tensor when JIT tracing
         head_dim = embed_dim.div(num_heads, rounding_mode='trunc')
     else:
         head_dim = embed_dim // num_heads
     assert head_dim * num_heads == embed_dim, "embed_dim must be divisible by num_heads"
+
+    # scaling 是 Q * K 之后的归一化系数
     scaling = float(head_dim) ** -0.5
 
+    # 下面计算 Q,K,V 向量
     if not use_separate_proj_weight:
+        # Q,K,V的权重矩阵维度都相同时
         if (query is key or torch.equal(query, key)) and (key is value or torch.equal(key, value)):
+            # 这个 if 判断的是 query, key, value 都相同时，比如第一层的 encoder 就是这种情况
             # self-attention
+            # 一口气计算出Q,K,V，因为这里做的是 query * in_proj_weight^T + in_proj_bias 这个操作，然后使用 chunk 来分开
             q, k, v = linear(query, in_proj_weight, in_proj_bias).chunk(3, dim=-1)
 
         elif key is value or torch.equal(key, value):
+            # decoder 里中中间的那一层 attention, 此时 key 和 value 都是来自于 encoder 的最后一层输出
             # encoder-decoder attention
             # This is inline in_proj function with in_proj_weight and in_proj_bias
             _b = in_proj_bias
             _start = 0
             _end = embed_dim
+            # 从Q,K,V三者合并的权重矩阵中，切片取出 Q 对应的权重矩阵
             _w = in_proj_weight[_start:_end, :]
             if _b is not None:
                 _b = _b[_start:_end]
+            # 获取 Q 向量：q = query * _w^T + _b
             q = linear(query, _w, _b)
 
             if key is None:
@@ -4777,6 +4791,7 @@ def multi_head_attention_forward(
                 _w = in_proj_weight[_start:, :]
                 if _b is not None:
                     _b = _b[_start:]
+                # 获取 K,V 向量
                 k, v = linear(key, _w, _b).chunk(2, dim=-1)
 
         else:
