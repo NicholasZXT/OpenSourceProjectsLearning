@@ -4920,6 +4920,7 @@ def multi_head_attention_forward(
         if key_padding_mask is not None:
             key_padding_mask = pad(key_padding_mask, (0, 1))
 
+    # 输出的权重就是 Q * K^T，也就是self-attention的值，不过还需要经过下面的 softmax
     attn_output_weights = torch.bmm(q, k.transpose(1, 2))
     assert list(attn_output_weights.size()) == [bsz * num_heads, tgt_len, src_len]
 
@@ -4937,9 +4938,11 @@ def multi_head_attention_forward(
         )
         attn_output_weights = attn_output_weights.view(bsz * num_heads, tgt_len, src_len)
 
+    # 对self-attention 做 softmax
     attn_output_weights = softmax(attn_output_weights, dim=-1)
     attn_output_weights = dropout(attn_output_weights, p=dropout_p, training=training)
 
+    # self-attention 的输出就是 attn_output-weights 和 value 向量的乘积
     attn_output = torch.bmm(attn_output_weights, v)
     assert list(attn_output.size()) == [bsz * num_heads, tgt_len, head_dim]
     attn_output = attn_output.transpose(0, 1).contiguous().view(tgt_len, bsz, embed_dim)

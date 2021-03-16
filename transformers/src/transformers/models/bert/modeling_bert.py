@@ -686,6 +686,8 @@ class BertPreTrainingHeads(nn.Module):
         self.seq_relationship = nn.Linear(config.hidden_size, 2)
 
     def forward(self, sequence_output, pooled_output):
+        # sequence_output 是BertModel 最后一层的输出
+        # pooled_output 是BertModel 最后一层中，对应于 [CLS] 的输出
         prediction_scores = self.predictions(sequence_output)
         seq_relationship_score = self.seq_relationship(pooled_output)
         return prediction_scores, seq_relationship_score
@@ -1078,6 +1080,9 @@ class BertForPreTraining(BertPreTrainedModel):
             return_dict=return_dict,
         )
 
+        # 直接用切片的方式获取 BertModel 的前两个输出，分别是 last_hidden_state 和 pooler_output
+        # last_hidden_state 是BertModel最后一层的输出,shape=(batch_size, sequence_length, embedding_dim)
+        # pooler_output 是 最后一层输出中，第一个token（对应于[CLS]）的输出，shape=(batch_size, embedding_dim)
         sequence_output, pooled_output = outputs[:2]
         prediction_scores, seq_relationship_score = self.cls(sequence_output, pooled_output)
 

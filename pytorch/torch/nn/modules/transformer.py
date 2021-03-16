@@ -290,6 +290,7 @@ class TransformerEncoderLayer(Module):
         Shape:
             see the docs in Transformer class.
         """
+        # Encoder 的 forward 只有一个输入 src，并且这个 src 在传入 MultiheadAttention 时，是同时 作为 query, key, value 三个参数的
         src2 = self.self_attn(src, src, src, attn_mask=src_mask,
                               key_padding_mask=src_key_padding_mask)[0]
         src = src + self.dropout1(src2)
@@ -360,10 +361,13 @@ class TransformerDecoderLayer(Module):
         Shape:
             see the docs in Transformer class.
         """
+        # Decoder 的forward 方法需要传入两个参数， tgt 和 memory
+        # Decoder 的第一层和 Encoder 的self-attention 一样， tgt 同时作为 query, key, value
         tgt2 = self.self_attn(tgt, tgt, tgt, attn_mask=tgt_mask,
                               key_padding_mask=tgt_key_padding_mask)[0]
         tgt = tgt + self.dropout1(tgt2)
         tgt = self.norm1(tgt)
+        # 但是 Decoder 的第二层 encoder-decoder attention 中，tgt 只是在作为 query, memory 才是作为 key, value
         tgt2 = self.multihead_attn(tgt, memory, memory, attn_mask=memory_mask,
                                    key_padding_mask=memory_key_padding_mask)[0]
         tgt = tgt + self.dropout2(tgt2)
