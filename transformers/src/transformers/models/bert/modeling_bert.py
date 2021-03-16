@@ -625,27 +625,41 @@ class BertPooler(nn.Module):
 class BertPredictionHeadTransform(nn.Module):
     def __init__(self, config):
         super().__init__()
+        # 线性映射层
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
+        # 激活层
         if isinstance(config.hidden_act, str):
             self.transform_act_fn = ACT2FN[config.hidden_act]
         else:
             self.transform_act_fn = config.hidden_act
+        # LayerNormalization 层
         self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 
     def forward(self, hidden_states):
+        # BertModel 最后一层的输出last_hidden_state, shape=(batch_size, sequence_length, hidden_size)
+        # 线性映射
         hidden_states = self.dense(hidden_states)
+        # 激活层
         hidden_states = self.transform_act_fn(hidden_states)
+        # Normalization
         hidden_states = self.LayerNorm(hidden_states)
         return hidden_states
 
 
 class BertLMPredictionHead(nn.Module):
+    """
+    用于创建一个线性映射层, 把transformer block输出的[batch_size, seq_len, embed_dim]
+    映射为[batch_size, seq_len, vocab_size], 也就是把最后一个维度映射成字典中字的数量,
+    获取MaskedLM的预测结果
+    """
     def __init__(self, config):
         super().__init__()
+        # 这一层会做 线性映射 + 激活函数 + LayerNormalization
         self.transform = BertPredictionHeadTransform(config)
 
         # The output weights are the same as the input embeddings, but there is
         # an output-only bias for each token.
+        # 将 hidden_size长度的输出 映射成 vocab_size 相等的 向量
         self.decoder = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
         self.bias = nn.Parameter(torch.zeros(config.vocab_size))
@@ -654,7 +668,10 @@ class BertLMPredictionHead(nn.Module):
         self.decoder.bias = self.bias
 
     def forward(self, hidden_states):
+        # BertModel 最后一层的输出last_hidden_state, shape=(batch_size, sequence_length, hidden_size)
+        # 线性映射 + 激活函数 + LayerNormalization
         hidden_states = self.transform(hidden_states)
+        # 从 hidden_size 长度的向量 映射到 vocab_size 长度的向量
         hidden_states = self.decoder(hidden_states)
         return hidden_states
 
@@ -682,14 +699,24 @@ class BertOnlyNSPHead(nn.Module):
 class BertPreTrainingHeads(nn.Module):
     def __init__(self, config):
         super().__init__()
+        # 下面这两层是独立的
+        # 把transformer block输出的[batch_size, seq_len, embed_dim]映射为[batch_size, seq_len, vocab_size]
+        # 用来进行MaskedLM的预测
         self.predictions = BertLMPredictionHead(config)
+        # 下面的Linear层用于处理 [CLS] 对应的token输出，将其映射为 2 分类的两个值
+        # 用来进行Next Sentence的预测
         self.seq_relationship = nn.Linear(config.hidden_size, 2)
 
     def forward(self, sequence_output, pooled_output):
-        # sequence_output 是BertModel 最后一层的输出
-        # pooled_output 是BertModel 最后一层中，对应于 [CLS] 的输出
+        # sequence_output 是BertModel 最后一层的输出last_hidden_state, shape=(batch_size, sequence_length, hidden_size)
         prediction_scores = self.predictions(sequence_output)
+        # prediction_scores
+
+        # pooled_output 是BertModel 最后一层中，对应于 [CLS] 的输出, shape=(batch_size, hidden_size)
+        # 将 [CLS] 对应token 的输出映射成 2 分类的两个值
         seq_relationship_score = self.seq_relationship(pooled_output)
+        # seq_relationship_score
+
         return prediction_scores, seq_relationship_score
 
 
@@ -1010,6 +1037,8 @@ class BertForPreTraining(BertPreTrainedModel):
         super().__init__(config)
 
         self.bert = BertModel(config)
+        # 在原始的BERT模型输出上加了一层，但是这一层会做两件事：
+        # 1.
         self.cls = BertPreTrainingHeads(config)
 
         self.init_weights()
@@ -1030,7 +1059,7 @@ class BertForPreTraining(BertPreTrainedModel):
         position_ids=None,
         head_mask=None,
         inputs_embeds=None,
-        labels=None,
+        labels=None,  # 这里比 BertModel 多了 labels
         next_sentence_label=None,
         output_attentions=None,
         output_hidden_states=None,
@@ -1081,8 +1110,8 @@ class BertForPreTraining(BertPreTrainedModel):
         )
 
         # 直接用切片的方式获取 BertModel 的前两个输出，分别是 last_hidden_state 和 pooler_output
-        # last_hidden_state 是BertModel最后一层的输出,shape=(batch_size, sequence_length, embedding_dim)
-        # pooler_output 是 最后一层输出中，第一个token（对应于[CLS]）的输出，shape=(batch_size, embedding_dim)
+        # last_hidden_state 是BertModel最后一层的输出,shape=(batch_size, sequence_length, hidden_size)
+        # pooler_output 是 最后一层输出中，第一个token（对应于[CLS]）的输出，shape=(batch_size, hidden_size)
         sequence_output, pooled_output = outputs[:2]
         prediction_scores, seq_relationship_score = self.cls(sequence_output, pooled_output)
 
