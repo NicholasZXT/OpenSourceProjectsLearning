@@ -168,6 +168,7 @@ class BertEmbeddings(nn.Module):
 
     def __init__(self, config):
         super().__init__()
+        # 使用的是pytorch本身的nn.Embedding层, 这里Embedding层的参数也是后面学习得到的
         self.word_embeddings = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=config.pad_token_id)
         self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
         self.token_type_embeddings = nn.Embedding(config.type_vocab_size, config.hidden_size)
@@ -1500,6 +1501,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
 
         self.bert = BertModel(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        # 用于将 BertModel 输出的 [CLS] token 对应的 hidden_state 映射成 num_labels 维的向量，用于分类
         self.classifier = nn.Linear(config.hidden_size, config.num_labels)
 
         self.init_weights()
@@ -1544,11 +1546,14 @@ class BertForSequenceClassification(BertPreTrainedModel):
             return_dict=return_dict,
         )
 
+        # 获取 BertModel 返回的 pooler_output，也就是对应于 [CLS] 的hidden_state
         pooled_output = outputs[1]
-
+        # 做dropout
         pooled_output = self.dropout(pooled_output)
+        # 计算 num_labels 个类别中，每一类对应的 logits
         logits = self.classifier(pooled_output)
 
+        # 以下计算Loss
         loss = None
         if labels is not None:
             if self.num_labels == 1:
@@ -1556,6 +1561,7 @@ class BertForSequenceClassification(BertPreTrainedModel):
                 loss_fct = MSELoss()
                 loss = loss_fct(logits.view(-1), labels.view(-1))
             else:
+                # 对于分类问题，计算的是交叉熵损失
                 loss_fct = CrossEntropyLoss()
                 loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
 
